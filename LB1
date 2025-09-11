@@ -7,6 +7,6 @@ print(matrix)
 
 matrix.flat[np.argmax(matrix)] = 0
 
-print("\nМатрица после замены:")
+print("\nМатрица после замены max на 0:")
 print()
 print(matrix)
