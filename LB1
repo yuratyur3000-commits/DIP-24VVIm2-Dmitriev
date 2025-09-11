@@ -1,0 +1,12 @@
+import numpy as np
+
+matrix = np.random.randint(0, 100, size=(4, 4))
+print("Исходная матрица:")
+print()
+print(matrix)
+
+matrix.flat[np.argmax(matrix)] = 0
+
+print("\nМатрица после замены:")
+print()
+print(matrix)
