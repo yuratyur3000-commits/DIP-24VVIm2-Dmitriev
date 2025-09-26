@@ -1,0 +1,94 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from google.colab.patches import cv2_imshow  
+
+image = cv2.imread('Olen.jpg')
+
+if image is None:
+    print("Ошибка: изображение не найдено или не может быть прочитано.")
+else:
+    
+    src_points = np.float32([[0, 0], [image.shape[1], 0], [0, image.shape[0]]])
+
+   dst_points = np.float32([[100, 0], [image.shape[1], 0], [0, image.shape[0]]])
+    
+    M = cv2.getAffineTransform(src_points, dst_points)
+    
+    corrected_image = cv2.warpAffine(image, M, (image.shape[1] + 130, image.shape[0]))
+    
+    left_crop = 100  # Обрезка слева
+    right_crop = 100  # Обрезка справа
+    
+    cropped_image = corrected_image[:, left_crop:image.shape[1] - right_crop]
+   
+    cv2.imwrite('corrected_Olen.jpg', cropped_image)
+    
+    cv2_imshow(cropped_image)
+   
+    median_filtered_image = cv2.medianBlur(cropped_image, 5)
+   
+    gaussian_filtered_image = cv2.GaussianBlur(median_filtered_image, (15, 15), 0)
+    
+    kernel1 = np.asarray([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    kernel2 = np.asarray([[-0.25, -0.25, -0.25], [-0.25, 3, -0.25], [-0.25, -0.25, -0.25]])
+    kernel3 = np.asarray([[0, -0.25, 0], [-0.25, 2, -0.25], [0, -0.25, 0]])
+    kernel4 = np.asarray([[1/9, 1/9, 1/9], [1/9, 1/9, 1/9], [1/9, 1/9, 1/9]])
+    kernel5 = np.asarray([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    
+    sharpened_image1 = cv2.filter2D(cropped_image, -1, kernel1)
+    sharpened_image2 = cv2.filter2D(median_filtered_image, -1, kernel2)
+    sharpened_image3 = cv2.filter2D(gaussian_filtered_image, -1, kernel3)
+    sharpened_image4 = cv2.filter2D(cropped_image, -1, kernel4)
+    sharpened_image5 = cv2.filter2D(cropped_image, -1, kernel5)
+    sharpened_image6 = cv2.filter2D(median_filtered_image, -1, kernel1)
+    
+    plt.figure(figsize=(15, 15))
+    plt.subplot(3, 3, 2)
+    plt.imshow(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB))
+    plt.title('Обработаннон исходное изображение')
+    plt.axis('off')
+
+    plt.subplot(3, 3, 3)
+    plt.imshow(cv2.cvtColor(median_filtered_image, cv2.COLOR_BGR2RGB))
+    plt.title('Обработанное изображение \n с медианным фильтром 5x5')
+    plt.axis('off')
+
+    plt.subplot(3, 3, 4)
+    plt.imshow(cv2.cvtColor(gaussian_filtered_image, cv2.COLOR_BGR2RGB))
+    plt.title('Обработанное изображение \n с гауссовской фильтрацией 15x15')
+    plt.axis('off')
+
+    plt.subplot(3, 3, 5)
+    plt.imshow(cv2.cvtColor(sharpened_image1, cv2.COLOR_BGR2RGB))
+    plt.title('Обработанное исходнон изображение \n с ядром 1')
+    plt.axis('off')
+
+    plt.subplot(3, 3, 6)
+    plt.imshow(cv2.cvtColor(sharpened_image2, cv2.COLOR_BGR2RGB))
+    plt.title('Обработанное медианное изображение \n  с ядром 2')
+    plt.axis('off')
+    
+    plt.subplot(3, 3, 7)
+    plt.imshow(cv2.cvtColor(sharpened_image3, cv2.COLOR_BGR2RGB))
+    plt.title('Обработанное гауссовское \n с ядром 3')
+    plt.axis('off')
+
+    plt.subplot(3, 3, 1)
+    plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    plt.title('Не обработанное исходное изображение')
+    plt.axis('off')
+
+    plt.subplot(3, 3, 8)
+    plt.imshow(cv2.cvtColor(sharpened_image5, cv2.COLOR_BGR2RGB))
+    plt.title('Обработанное исходное изображение \n с ядром 5')
+    plt.axis('off')
+
+    plt.subplot(3, 3, 9)
+    plt.imshow(cv2.cvtColor(sharpened_image6, cv2.COLOR_BGR2RGB))
+    plt.title('Обработанное медианное изображение \n с ядром 1')
+    plt.axis('off')
+
+    plt.show()
+    
+    cv2.imwrite('sharpened_OlenRed.jpg', sharpened_image1)
