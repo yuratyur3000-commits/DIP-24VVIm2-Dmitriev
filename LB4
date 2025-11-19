@@ -1,0 +1,72 @@
+import cv2
+import numpy as np
+import os
+
+def enhance_image_for_translation():
+    input_path = "/content/as.png"
+    output_path = "/content/enhanced_text.png"
+    
+    if not os.path.exists(input_path):
+        print(f"Файл {input_path} не найден!")
+        return False
+   
+    img = cv2.imread(input_path)
+    if img is None:
+        print("Ошибка загрузки изображения!")
+        return False
+    
+    print(f"Обработка изображения: {img.shape}")
+    
+    # 1. Увеличение разрешения
+    scale_factor = 2
+    height, width = img.shape[:2]
+    new_width = int(width * scale_factor)
+    new_height = int(height * scale_factor)
+    resized = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+    
+    # 2. Увеличение резкости
+    kernel_sharpen = np.array([[-1,-1,-1], 
+                              [-1, 9,-1],
+                              [-1,-1,-1]])
+    sharpened = cv2.filter2D(resized, -1, kernel_sharpen)
+    
+    # 3. Улучшение контрастности
+    lab = cv2.cvtColor(sharpened, cv2.COLOR_BGR2LAB)
+    lab_planes = list(cv2.split(lab))
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    lab_planes[0] = clahe.apply(lab_planes[0])
+    lab = cv2.merge(lab_planes)
+    contrast_enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    
+    # 4. Дополнительное увеличение контраста
+    alpha = 1.5
+    beta = 10
+    high_contrast = cv2.convertScaleAbs(contrast_enhanced, alpha=alpha, beta=beta)
+    
+    # 5. Преобразование в оттенки серого
+    gray = cv2.cvtColor(high_contrast, cv2.COLOR_BGR2GRAY)
+    
+    # 6. Бинаризация
+    binary_adaptive = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY, 11, 2
+    )
+    
+    # 7. Удаление шумов
+    denoised = cv2.medianBlur(binary_adaptive, 3)
+    
+    # 8. Добавление белых полей
+    border_size = 30
+    final_image = cv2.copyMakeBorder(
+        denoised, 
+        border_size, border_size, border_size, border_size,
+        cv2.BORDER_CONSTANT, value=[255, 255, 255]
+    )
+    
+    # Сохранение результата
+    cv2.imwrite(output_path, final_image)
+    print(f"Готово: {output_path}")
+    return True
+
+# Запуск обработки
+enhance_image_for_translation()
