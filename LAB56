@@ -2,181 +2,148 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-def detect_oranges(image_path, output_path=None):
+def highlight_orange_objects(image_path, output_path=None):
     
     image = cv2.imread(image_path)
     if image is None:
         print(f"Ошибка: не удалось загрузить изображение по пути {image_path}")
-        return None, None
-    
+        return None
+        
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    original_image = image_rgb.copy()
     
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-   
-    lower_orange1 = np.array([0, 50, 50])    
-    upper_orange1 = np.array([15, 255, 255])
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    lab[:, :, 0] = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lab[:, :, 0])
+    enhanced_image = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
     
-    lower_orange2 = np.array([15, 50, 50])  
-    upper_orange2 = np.array([25, 255, 255])
+    hsv = cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2HSV)
     
-    mask1 = cv2.inRange(hsv, lower_orange1, upper_orange1)
-    mask2 = cv2.inRange(hsv, lower_orange2, upper_orange2)
+    color_ranges = [
+        ([0, 80, 80], [15, 255, 255]),   
+        ([15, 80, 80], [25, 255, 255]),          
+    ]
     
-    orange_mask = cv2.bitwise_or(mask1, mask2)
+    orange_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
+    for lower, upper in color_ranges:
+        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
+        orange_mask = cv2.bitwise_or(orange_mask, mask)
     
-    kernel = np.ones((5, 5), np.uint8)
-    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_CLOSE, kernel)
-    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_OPEN, kernel)
+    kernel_open = np.ones((3, 3), np.uint8)
+    kernel_close = np.ones((9, 9), np.uint8)
+    
+    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_OPEN, kernel_open)
+    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_CLOSE, kernel_close)
+    
+    highlighted_image = original_image.copy()
+    
+    highlight_color = [255, 165, 0]  
+    
+    highlight_mask = np.zeros_like(highlighted_image)
+    highlight_mask[orange_mask > 0] = highlight_color
+    
+    alpha = 0.6  
+    highlighted_image = cv2.addWeighted(highlighted_image, 1, highlight_mask, alpha, 0)
     
     contours, _ = cv2.findContours(orange_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    result_image = image_rgb.copy()
+    contour_image = original_image.copy()
+    cv2.drawContours(contour_image, contours, -1, (0, 255, 0), 3)
     
-    min_area = 1000  
-    oranges_detected = 0
+    orange_only = cv2.bitwise_and(original_image, original_image, mask=orange_mask)
     
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > min_area:
-            
-            x, y, w, h = cv2.boundingRect(contour)
-            
-            cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 255, 0), 3)
-            
-            cv2.drawContours(result_image, [contour], -1, (255, 0, 0), 2)
-            
-            cv2.putText(result_image, f'Orange {area:.0f}', (x, y-10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            oranges_detected += 1
-   
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(16, 10))
     
     plt.subplot(2, 3, 1)
-    plt.imshow(image_rgb)
+    plt.imshow(original_image)
     plt.title('Исходное изображение')
     plt.axis('off')
     
     plt.subplot(2, 3, 2)
-    plt.imshow(hsv[:,:,0], cmap='hsv')
-    plt.title('H канал HSV')
+    plt.imshow(orange_mask, cmap='hot')
+    plt.title('Бинарная маска оранжевого цвета')
     plt.axis('off')
     
     plt.subplot(2, 3, 3)
-    plt.imshow(orange_mask, cmap='gray')
-    plt.title('Маска оранжевого цвета')
+    plt.imshow(highlighted_image)
+    plt.title('Полупрозрачное выделение')
     plt.axis('off')
-    
+   
     plt.subplot(2, 3, 4)
-    plt.imshow(result_image)
-    plt.title(f'Результат: {oranges_detected} апельсинов')
+    plt.imshow(contour_image)
+    plt.title('Контуры оранжевых объектов')
     plt.axis('off')
     
     plt.subplot(2, 3, 5)
-    enhanced_mask = cv2.bitwise_and(image_rgb, image_rgb, mask=orange_mask)
-    plt.imshow(enhanced_mask)
-    plt.title('Выделенные области')
+    plt.imshow(orange_only)
+    plt.title('Только оранжевые области')
     plt.axis('off')
     
     plt.subplot(2, 3, 6)
-    colors = ['r', 'g', 'b']
-    for i, color in enumerate(colors):
-        hist = cv2.calcHist([image_rgb], [i], None, [256], [0, 256])
-        plt.plot(hist, color=color)
-    plt.title('Гистограмма цветов')
-    plt.xlabel('Интенсивность')
-    plt.ylabel('Количество пикселей')
+    plt.imshow(hsv[:,:,0], cmap='hsv')
+    plt.title('H канал HSV (оттенок)')
+    plt.axis('off')
+    plt.colorbar()
     
     plt.tight_layout()
     plt.show()
     
-    if output_path:
-        result_bgr = cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR)
+    print("=== АНАЛИЗ ЦВЕТОВОГО РАСПРЕДЕЛЕНИЯ ===")
+    print(f"Всего пикселей в изображении: {hsv.shape[0] * hsv.shape[1]}")
+    print(f"Оранжевых пикселей: {np.count_nonzero(orange_mask)}")
+    print(f"Процент оранжевых пикселей: {np.count_nonzero(orange_mask) / (hsv.shape[0] * hsv.shape[1]) * 100:.2f}%")
+    
+    if output_path:        
+        result_bgr = cv2.cvtColor(contour_image, cv2.COLOR_RGB2BGR)
         cv2.imwrite(output_path, result_bgr)
         print(f"Результат сохранен в: {output_path}")
     
-    print(f"Обнаружено апельсинов: {oranges_detected}")
-    return oranges_detected, result_image
+    return orange_mask, highlighted_image
 
-def adjust_color_ranges(image_path):
-    
+def adjust_orange_color_ranges(image_path):    
     image = cv2.imread(image_path)
     if image is None:
-        print(f"Ошибка загрузки изображения: {image_path}")
         return
     
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    
-    print("Анализ цветового распределения в HSV:")
-    print(f"H канал: min={hsv[:,:,0].min()}, max={hsv[:,:,0].max()}, mean={hsv[:,:,0].mean():.1f}")
-    print(f"S канал: min={hsv[:,:,1].min()}, max={hsv[:,:,1].max()}, mean={hsv[:,:,1].mean():.1f}")
-    print(f"V канал: min={hsv[:,:,2].min()}, max={hsv[:,:,2].max()}, mean={hsv[:,:,2].mean():.1f}")
-    
+        
     test_ranges = [
-        ([0, 50, 50], [15, 255, 255], "Диапазон 1"),
-        ([10, 50, 50], [20, 255, 255], "Диапазон 2"),
-        ([5, 100, 100], [15, 255, 255], "Диапазон 3"),
-        ([0, 100, 100], [25, 255, 255], "Диапазон 4")
+        ([8, 100, 100], [18, 255, 255], "Яркий оранжевый"),
+        ([18, 80, 80], [28, 255, 255], "Желто-оранжевый"),
+        ([0, 100, 100], [8, 255, 255], "Красно-оранжевый"),
+        ([5, 120, 120], [25, 255, 255], "Широкий оранжевый"),
+        ([10, 150, 150], [20, 255, 255], "Насыщенный оранжевый")
     ]
-    
     plt.figure(figsize=(15, 10))
     
     for i, (lower, upper, title) in enumerate(test_ranges):
         mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
-        plt.subplot(2, 2, i+1)
-        plt.imshow(mask, cmap='gray')
-        plt.title(f'{title}: {np.count_nonzero(mask)} пикселей')
+        
+        kernel = np.ones((5, 5), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        
+        orange_pixels = np.count_nonzero(mask)
+        total_pixels = mask.shape[0] * mask.shape[1]
+        percentage = (orange_pixels / total_pixels) * 100
+        
+        plt.subplot(2, 3, i+1)
+        plt.imshow(mask, cmap='hot')
+        plt.title(f'{title}\n{orange_pixels} px ({percentage:.1f}%)')
         plt.axis('off')
     
     plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
-    
     image_path = "/content/1490969617_cvetovaya-palitra00011.png"
-    output_path = "/content/result_oranges.png"
+    output_path = "/content/orange_objects.png"
     
-    print(f"Обрабатываем изображение: {image_path}")
+    print("=== ВЫДЕЛЕНИЕ ОБЪЕКТОВ ОРАНЖЕВОГО ЦВЕТА ===")
     
-    print("Анализ цветовых диапазонов...")
-    adjust_color_ranges(image_path)
+    print("1. Тестирование цветовых диапазонов...")
+    adjust_orange_color_ranges(image_path)
     
-    print("Запуск детекции апельсинов...")
-    count, result = detect_oranges(image_path, output_path)
+    print("2. Выделение оранжевых объектов...")
+    orange_mask, highlighted_image = highlight_orange_objects(image_path, output_path)
     
-    if count == 0:
-        print("\nАпельсины не обнаружены. Попробуем альтернативный метод...")
-        
-        image = cv2.imread(image_path)
-        if image is not None:
-            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-            
-            lower_orange = np.array([0, 30, 30])
-            upper_orange = np.array([30, 255, 255])
-            wide_mask = cv2.inRange(hsv, lower_orange, upper_orange)
-            
-            contours, _ = cv2.findContours(wide_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            result_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            oranges_count = 0
-            
-            for contour in contours:
-                area = cv2.contourArea(contour)
-                if area > 500:  
-                    x, y, w, h = cv2.boundingRect(contour)
-                    cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 255, 0), 3)
-                    oranges_count += 1
-            
-            plt.figure(figsize=(10, 5))
-            plt.subplot(1, 2, 1)
-            plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-            plt.title('Исходное изображение')
-            plt.axis('off')
-            
-            plt.subplot(1, 2, 2)
-            plt.imshow(result_image)
-            plt.title(f'Альтернативный метод: {oranges_count} объектов')
-            plt.axis('off')
-            plt.show()
-            
-            print(f"Альтернативный метод обнаружил: {oranges_count} объектов")
+    print("\n=== ВЫДЕЛЕНИЕ ЗАВЕРШЕНО ===")
