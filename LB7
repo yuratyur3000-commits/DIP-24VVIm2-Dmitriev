@@ -1,0 +1,186 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+def find_template(template_path, image_path, output_path=None):
+    
+    template = cv2.imread(template_path)
+    image = cv2.imread(image_path)
+    
+    if template is None:
+        print(f"Ошибка: не удалось загрузить шаблон по пути {template_path}")
+        return None
+    if image is None:
+        print(f"Ошибка: не удалось загрузить изображение по пути {image_path}")
+        return None
+    
+    template_rgb = cv2.cvtColor(template, cv2.COLOR_BGR2RGB)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    print(f"Размер шаблона: {template.shape[1]}x{template.shape[0]}")
+    print(f"Размер изображения: {image.shape[1]}x{image.shape[0]}")
+    
+    methods = [
+        #('cv2.TM_CCOEFF', cv2.TM_CCOEFF),
+        ('cv2.TM_CCOEFF_NORMED', cv2.TM_CCOEFF_NORMED),
+        #('cv2.TM_CCORR', cv2.TM_CCORR),
+        ('cv2.TM_CCORR_NORMED', cv2.TM_CCORR_NORMED),
+        ('cv2.TM_SQDIFF', cv2.TM_SQDIFF),
+        ('cv2.TM_SQDIFF_NORMED', cv2.TM_SQDIFF_NORMED)
+    ]
+    
+    result_image = image_rgb.copy()
+    
+    best_match_val = -1
+    best_location = None
+    best_method = None
+    
+    for method_name, method in methods:
+       
+        res = cv2.matchTemplate(image_rgb, template_rgb, method)
+        
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        
+        if method in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
+            match_val = 1 - min_val  
+            top_left = min_loc
+        else:
+            match_val = max_val
+            top_left = max_loc
+        
+        if match_val > best_match_val:
+            best_match_val = match_val
+            best_location = top_left
+            best_method = method_name
+    
+    if best_match_val > 0.7:  # Порог уверенности
+       
+        h, w = template_rgb.shape[:2]
+        top_left = best_location
+        bottom_right = (top_left[0] + w, top_left[1] + h)
+        
+        cv2.rectangle(result_image, top_left, bottom_right, (0, 255, 0), 7)
+             
+        print(f"Шаблон найден! Метод: {best_method}")
+        print(f"Уверенность: {best_match_val:.3f}")
+        print(f"Координаты: {top_left} -> {bottom_right}")
+        
+    else:
+        print("Шаблон не найден с достаточной уверенностью")
+        print(f"Лучшая уверенность: {best_match_val:.3f}")
+        return None
+    
+    plt.figure(figsize=(15, 10))
+    
+    plt.subplot(2, 3, 1)
+    plt.imshow(template_rgb)
+    plt.title('Шаблон для поиска')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 2)
+    plt.imshow(image_rgb)
+    plt.title('Исходное изображение')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 3)
+    plt.imshow(result_image)
+    plt.title(f'Результат поиска\n{best_method}: {best_match_val:.3f}')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 4)
+    found_region = image_rgb[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+    plt.imshow(found_region)
+    plt.title('Найденная область')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 5)
+    comparison = np.hstack((template_rgb, found_region))
+    plt.imshow(comparison)
+    plt.title('Сравнение: шаблон | найденная область')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 6)
+    best_method_code = [m[1] for m in methods if m[0] == best_method][0]
+    res_map = cv2.matchTemplate(image_rgb, template_rgb, best_method_code)
+    plt.imshow(res_map, cmap='hot')
+    plt.title('Карта совпадений (heatmap)')
+    plt.axis('off')
+    plt.colorbar()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    if output_path:
+        result_bgr = cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_path, result_bgr)
+        print(f"Результат сохранен в: {output_path}")
+    
+    return best_location, (w, h), best_match_val
+
+def find_template_multiple(template_path, image_path, threshold=0.8):
+    
+    template = cv2.imread(template_path)
+    image = cv2.imread(image_path)
+    
+    if template is None or image is None:
+        return None
+    
+    template_rgb = cv2.cvtColor(template, cv2.COLOR_BGR2RGB)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    result = cv2.matchTemplate(image_rgb, template_rgb, cv2.TM_CCOEFF_NORMED)
+    
+    locations = np.where(result >= threshold)
+    locations = list(zip(*locations[::-1]))  # Меняем местами x и y
+    
+    print(f"Найдено возможных совпадений: {len(locations)}")
+    
+    rectangles = []
+    for loc in locations:
+        rect = [loc[0], loc[1], template.shape[1], template.shape[0]]
+        rectangles.append(rect)
+        rectangles.append(rect)  # Дублируем для группировки
+    
+    rectangles, weights = cv2.groupRectangles(rectangles, 1, 0.2)
+    
+    if len(rectangles) > 0:
+        print(f"После группировки осталось: {len(rectangles)}")
+        
+        result_image = image_rgb.copy()
+        for i, (x, y, w, h) in enumerate(rectangles):
+            cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 255, 0), 7)
+                    
+        plt.figure(figsize=(12, 8))
+        plt.imshow(result_image)
+        plt.title(f'Найдено {len(rectangles)} вхождений шаблона')
+        plt.axis('off')
+        plt.show()
+        
+        return rectangles
+    else:
+        print("После группировки не осталось надежных совпадений")
+        return None
+
+if __name__ == "__main__":
+    template_path = "/content/Folder20214280001_tmpl.jpg"
+    image_path = "/content/Folder20214280001.jpg"
+    output_path = "/content/template_match_result.jpg"
+    
+    print("=== ПОИСК ШАБЛОНА НА ИЗОБРАЖЕНИИ ===")
+    
+    # Основной поиск (одно лучшее совпадение)
+    print("1. Поиск лучшего совпадения...")
+    result = find_template(template_path, image_path, output_path)
+    
+    if result is not None:
+        location, size, confidence = result
+        print(f"\n=== РЕЗУЛЬТАТ ===")
+        print(f"Координаты: {location}")
+        print(f"Размер: {size}")
+        print(f"Уверенность: {confidence:.3f}")
+    
+    print("\n2. Поиск всех возможных вхождений...")
+    multiple_results = find_template_multiple(template_path, image_path, threshold=0.7)
+    
+    if multiple_results is not None:
+        print(f"Найдено уникальных вхождений: {len(multiple_results)}")
