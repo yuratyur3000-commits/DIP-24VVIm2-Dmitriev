@@ -1,0 +1,182 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+def detect_oranges(image_path, output_path=None):
+    
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"Ошибка: не удалось загрузить изображение по пути {image_path}")
+        return None, None
+    
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+   
+    lower_orange1 = np.array([0, 50, 50])    
+    upper_orange1 = np.array([15, 255, 255])
+    
+    lower_orange2 = np.array([15, 50, 50])  
+    upper_orange2 = np.array([25, 255, 255])
+    
+    mask1 = cv2.inRange(hsv, lower_orange1, upper_orange1)
+    mask2 = cv2.inRange(hsv, lower_orange2, upper_orange2)
+    
+    orange_mask = cv2.bitwise_or(mask1, mask2)
+    
+    kernel = np.ones((5, 5), np.uint8)
+    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_CLOSE, kernel)
+    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_OPEN, kernel)
+    
+    contours, _ = cv2.findContours(orange_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    result_image = image_rgb.copy()
+    
+    min_area = 1000  
+    oranges_detected = 0
+    
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > min_area:
+            
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 255, 0), 3)
+            
+            cv2.drawContours(result_image, [contour], -1, (255, 0, 0), 2)
+            
+            cv2.putText(result_image, f'Orange {area:.0f}', (x, y-10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            oranges_detected += 1
+   
+    plt.figure(figsize=(15, 10))
+    
+    plt.subplot(2, 3, 1)
+    plt.imshow(image_rgb)
+    plt.title('Исходное изображение')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 2)
+    plt.imshow(hsv[:,:,0], cmap='hsv')
+    plt.title('H канал HSV')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 3)
+    plt.imshow(orange_mask, cmap='gray')
+    plt.title('Маска оранжевого цвета')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 4)
+    plt.imshow(result_image)
+    plt.title(f'Результат: {oranges_detected} апельсинов')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 5)
+    enhanced_mask = cv2.bitwise_and(image_rgb, image_rgb, mask=orange_mask)
+    plt.imshow(enhanced_mask)
+    plt.title('Выделенные области')
+    plt.axis('off')
+    
+    plt.subplot(2, 3, 6)
+    colors = ['r', 'g', 'b']
+    for i, color in enumerate(colors):
+        hist = cv2.calcHist([image_rgb], [i], None, [256], [0, 256])
+        plt.plot(hist, color=color)
+    plt.title('Гистограмма цветов')
+    plt.xlabel('Интенсивность')
+    plt.ylabel('Количество пикселей')
+    
+    plt.tight_layout()
+    plt.show()
+    
+    if output_path:
+        result_bgr = cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_path, result_bgr)
+        print(f"Результат сохранен в: {output_path}")
+    
+    print(f"Обнаружено апельсинов: {oranges_detected}")
+    return oranges_detected, result_image
+
+def adjust_color_ranges(image_path):
+    
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"Ошибка загрузки изображения: {image_path}")
+        return
+    
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    print("Анализ цветового распределения в HSV:")
+    print(f"H канал: min={hsv[:,:,0].min()}, max={hsv[:,:,0].max()}, mean={hsv[:,:,0].mean():.1f}")
+    print(f"S канал: min={hsv[:,:,1].min()}, max={hsv[:,:,1].max()}, mean={hsv[:,:,1].mean():.1f}")
+    print(f"V канал: min={hsv[:,:,2].min()}, max={hsv[:,:,2].max()}, mean={hsv[:,:,2].mean():.1f}")
+    
+    test_ranges = [
+        ([0, 50, 50], [15, 255, 255], "Диапазон 1"),
+        ([10, 50, 50], [20, 255, 255], "Диапазон 2"),
+        ([5, 100, 100], [15, 255, 255], "Диапазон 3"),
+        ([0, 100, 100], [25, 255, 255], "Диапазон 4")
+    ]
+    
+    plt.figure(figsize=(15, 10))
+    
+    for i, (lower, upper, title) in enumerate(test_ranges):
+        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
+        plt.subplot(2, 2, i+1)
+        plt.imshow(mask, cmap='gray')
+        plt.title(f'{title}: {np.count_nonzero(mask)} пикселей')
+        plt.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    
+    image_path = "/content/1490969617_cvetovaya-palitra00011.png"
+    output_path = "/content/result_oranges.png"
+    
+    print(f"Обрабатываем изображение: {image_path}")
+    
+    print("Анализ цветовых диапазонов...")
+    adjust_color_ranges(image_path)
+    
+    print("Запуск детекции апельсинов...")
+    count, result = detect_oranges(image_path, output_path)
+    
+    if count == 0:
+        print("\nАпельсины не обнаружены. Попробуем альтернативный метод...")
+        
+        image = cv2.imread(image_path)
+        if image is not None:
+            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+            
+            lower_orange = np.array([0, 30, 30])
+            upper_orange = np.array([30, 255, 255])
+            wide_mask = cv2.inRange(hsv, lower_orange, upper_orange)
+            
+            contours, _ = cv2.findContours(wide_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            result_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            oranges_count = 0
+            
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area > 500:  
+                    x, y, w, h = cv2.boundingRect(contour)
+                    cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 255, 0), 3)
+                    oranges_count += 1
+            
+            plt.figure(figsize=(10, 5))
+            plt.subplot(1, 2, 1)
+            plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            plt.title('Исходное изображение')
+            plt.axis('off')
+            
+            plt.subplot(1, 2, 2)
+            plt.imshow(result_image)
+            plt.title(f'Альтернативный метод: {oranges_count} объектов')
+            plt.axis('off')
+            plt.show()
+            
+            print(f"Альтернативный метод обнаружил: {oranges_count} объектов")
