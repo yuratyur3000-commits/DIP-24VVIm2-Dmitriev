@@ -5,14 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 def extract_images_to_folders(image_path, output_base_dir="extracted_images"):
-    """
-    Извлекает картинки и сохраняет в две папки:
-    - Папка 1: первая большая картинка + 6 маленьких под ней
-    - Папка 2: вторая большая картинка + 6 маленьких под ней
-    
-    УНИВЕРСАЛЬНАЯ ВЕРСИЯ: работает с любыми размерами картинок
-    """
-    # Загружаем изображение
+   
     image = cv2.imread(image_path)
     if image is None:
         print(f"Ошибка: не удалось загрузить изображение {image_path}")
@@ -22,7 +15,6 @@ def extract_images_to_folders(image_path, output_base_dir="extracted_images"):
     height, width = image.shape[:2]
     print(f"Размер изображения: {width}x{height}")
 
-    # Используем универсальный метод обнаружения
     rectangles = universal_detection_method(image_path)
 
     if len(rectangles) < 8:
@@ -30,58 +22,37 @@ def extract_images_to_folders(image_path, output_base_dir="extracted_images"):
         return [], [], None, [], []
 
     print(f"Найдено прямоугольников: {len(rectangles)}")
-
-    # Сортируем по Y координате (сверху вниз), затем по X (слева направо)
     rectangles.sort(key=lambda r: (r['y'], r['x']))
 
     print("\nВсе найденные прямоугольники (отсортированные):")
     for i, rect in enumerate(rectangles):
         print(f"  {i+1}: y={rect['y']}, x={rect['x']}, w={rect['w']}, h={rect['h']}, area={rect['area']:.0f}")
-
-    # РАЗДЕЛЕНИЕ НА БОЛЬШИЕ И МАЛЕНЬКИЕ
-    # Находим 2 самые большие по площади - это будут большие картинки
     rectangles_by_area = sorted(rectangles, key=lambda r: r['area'], reverse=True)
     large_rectangles = rectangles_by_area[:2]
-
-    # Сортируем большие по положению сверху вниз
     large_rectangles.sort(key=lambda r: r['y'])
-
-    # Остальные - маленькие картинки
     small_rectangles = [r for r in rectangles if r not in large_rectangles]
     small_rectangles.sort(key=lambda r: (r['y'], r['x']))
 
     print(f"\nБольшие картинки:")
     for i, rect in enumerate(large_rectangles):
         print(f"   Большая {i+1}: y={rect['y']}, размер={rect['w']}x{rect['h']}, площадь={rect['area']:.0f}")
-
-    # АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ РАЗМЕРОВ
-    # Определяем характерные размеры маленьких картинок на основе статистики
     small_widths = [r['w'] for r in small_rectangles]
     small_heights = [r['h'] for r in small_rectangles]
     
     if small_widths and small_heights:
-        # Берем наиболее часто встречающийся размер (медиану)
         typical_small_width = int(np.median(small_widths))
         typical_small_height = int(np.median(small_heights))
         print(f"Типичный размер маленьких картинок: {typical_small_width}x{typical_small_height}")
     else:
-        # Если не нашли маленькие, используем эмпирические значения
         typical_small_width = 330
         typical_small_height = 300
         print(f"Используем стандартный размер маленьких: {typical_small_width}x{typical_small_height}")
-
-    # ФИЛЬТРАЦИЯ МАЛЕНЬКИХ КАРТИНОК ПО СТРУКТУРЕ
-    # Используем структурный подход для поиска 12 маленьких картинок
     filtered_small_rectangles = filter_small_by_structure(original, small_rectangles, large_rectangles, 
                                                          typical_small_width, typical_small_height)
 
     print(f"После структурной фильтрации: {len(filtered_small_rectangles)} маленьких картинок")
-
-    # Разделяем на две группы по 6 картинок
     small_rectangles_group1 = filtered_small_rectangles[:6]  # Первые 6 маленьких
     small_rectangles_group2 = filtered_small_rectangles[6:12]  # Следующие 6 маленьких
-
-    # Если остались лишние картинки, выводим информацию
     remaining = filtered_small_rectangles[12:]
     if remaining:
         print(f"Оставшиеся картинки (не использованы): {len(remaining)}")
@@ -89,24 +60,17 @@ def extract_images_to_folders(image_path, output_base_dir="extracted_images"):
     print(f"\nФИНАЛЬНОЕ РАСПРЕДЕЛЕНИЕ:")
     print(f"   Папка 1: {len(large_rectangles[:1])} большая + {len(small_rectangles_group1)} маленьких")
     print(f"   Папка 2: {len(large_rectangles[1:])} большая + {len(small_rectangles_group2)} маленьких")
-
-    # ВЫЧИСЛЯЕМ СТАНДАРТНЫЕ РАЗМЕРЫ
-    # Для больших картинок берем размер самой большой
     if large_rectangles:
         standard_large_width = max([r['w'] for r in large_rectangles])
         standard_large_height = max([r['h'] for r in large_rectangles])
     else:
         standard_large_width, standard_large_height = 800, 500
-
-    # Для маленьких картинок берем наиболее типичный размер
     standard_small_width = typical_small_width
     standard_small_height = typical_small_height
 
     print(f"\nСТАНДАРТНЫЕ РАЗМЕРЫ:")
     print(f"   Большие картинки: {standard_large_width}x{standard_large_height}")
     print(f"   Маленькие картинки: {standard_small_width}x{standard_small_height}")
-
-    # СОХРАНЕНИЕ В ПАПКИ
     output_dir = Path(output_base_dir)
     folder1_dir = output_dir / "group_1"
     folder2_dir = output_dir / "group_2"
@@ -117,62 +81,44 @@ def extract_images_to_folders(image_path, output_base_dir="extracted_images"):
     large_extracted = []
     small_extracted_group1 = []
     small_extracted_group2 = []
-
-    # ПАПКА 1 - первая большая + первые 6 маленьких
     if large_rectangles:
-        # Первая большая картинка
         rect = large_rectangles[0]
         cropped_large = crop_with_padding(original, rect, "large")
         if cropped_large is not None:
-            # Приводим к стандартному размеру с сохранением пропорций
             resized_large = resize_to_fit(cropped_large, standard_large_width, standard_large_height)
             cv2.imwrite(str(folder1_dir / "large_image.jpg"), resized_large)
             large_extracted.append(resized_large)
-            # Рисуем прямоугольник на debug изображении
             x, y, w, h = rect['x'], rect['y'], rect['w'], rect['h']
             cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 255, 0), 4)
             cv2.putText(debug_image, "GROUP 1 - LARGE", (x, y-15), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             print(f"Сохранена большая картинка в папку 1 (размер: {resized_large.shape[1]}x{resized_large.shape[0]})")
-
-    # Маленькие картинки для папки 1 (первые 6)
     for i, rect in enumerate(small_rectangles_group1):
         cropped_small = crop_with_padding(original, rect, "small")
         if cropped_small is not None:
-            # Приводим к стандартному размеру с сохранением пропорций
             resized_small = resize_to_fit(cropped_small, standard_small_width, standard_small_height)
             cv2.imwrite(str(folder1_dir / f"small_{i+1}.jpg"), resized_small)
             small_extracted_group1.append(resized_small)
-            # Рисуем прямоугольник на debug изображении
             x, y, w, h = rect['x'], rect['y'], rect['w'], rect['h']
             cv2.rectangle(debug_image, (x, y), (x+w, y+h), (255, 0, 0), 2)
             cv2.putText(debug_image, f"G1-{i+1}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
             print(f"Сохранена маленькая картинка {i+1} в папку 1 (размер: {resized_small.shape[1]}x{resized_small.shape[0]})")
-
-    # ПАПКА 2 - вторая большая + следующие 6 маленьких
     if len(large_rectangles) > 1:
-        # Вторая большая картинка
         rect = large_rectangles[1]
         cropped_large = crop_with_padding(original, rect, "large")
         if cropped_large is not None:
-            # Приводим к стандартному размеру с сохранением пропорций
             resized_large = resize_to_fit(cropped_large, standard_large_width, standard_large_height)
             cv2.imwrite(str(folder2_dir / "large_image.jpg"), resized_large)
             large_extracted.append(resized_large)
-            # Рисуем прямоугольник на debug изображении
             x, y, w, h = rect['x'], rect['y'], rect['w'], rect['h']
             cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 200, 0), 4)
             cv2.putText(debug_image, "GROUP 2 - LARGE", (x, y-15), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 0), 2)
             print(f"Сохранена большая картинка в папку 2 (размер: {resized_large.shape[1]}x{resized_large.shape[0]})")
-
-    # Маленькие картинки для папки 2 (следующие 6)
     for i, rect in enumerate(small_rectangles_group2):
         cropped_small = crop_with_padding(original, rect, "small")
         if cropped_small is not None:
-            # Приводим к стандартному размеру с сохранением пропорций
             resized_small = resize_to_fit(cropped_small, standard_small_width, standard_small_height)
             cv2.imwrite(str(folder2_dir / f"small_{i+1}.jpg"), resized_small)
             small_extracted_group2.append(resized_small)
-            # Рисуем прямоугольник на debug изображении
             x, y, w, h = rect['x'], rect['y'], rect['w'], rect['h']
             cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 0, 255), 2)
             cv2.putText(debug_image, f"G2-{i+1}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
@@ -183,33 +129,18 @@ def extract_images_to_folders(image_path, output_base_dir="extracted_images"):
     return large_extracted, small_extracted_group1 + small_extracted_group2, debug_image, small_extracted_group1, small_extracted_group2
 
 def universal_detection_method(image_path):
-    """
-    Универсальный метод обнаружения прямоугольников
-    Работает с любыми размерами картинок
-    """
     image = cv2.imread(image_path)
     original = image.copy()
     height, width = image.shape[:2]
-
-    # Простой и надежный метод: Canny + морфологические операции
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Адаптивная бинаризация для работы с разными контрастами
     binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                                    cv2.THRESH_BINARY_INV, 11, 2)
-    
-    # Морфологические операции для соединения линий и удаления шума
     kernel = np.ones((3, 3), np.uint8)
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-
-    # Находим контуры
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     rectangles = []
-    
-    # АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ПАРАМЕТРОВ ФИЛЬТРАЦИИ
-    # Основано на размере изображения
     min_area = (height * width) * 0.0005  # 0.05% от площади изображения
     max_area = (height * width) * 0.3     # 30% от площади изображения
 
@@ -218,15 +149,11 @@ def universal_detection_method(image_path):
 
         if min_area < area < max_area:
             x, y, w, h = cv2.boundingRect(contour)
-
-            # Гибкие критерии размера
             min_dimension = min(height, width) * 0.02  # 2% от меньшей стороны
             max_dimension = min(height, width) * 0.8   # 80% от меньшей стороны
             
             if (w > min_dimension and h > min_dimension and
                 w < max_dimension and h < max_dimension):
-
-                # Проверяем прямоугольность
                 rect_area = w * h
                 extent = area / rect_area if rect_area > 0 else 0
 
@@ -237,8 +164,6 @@ def universal_detection_method(image_path):
                     })
 
     print(f"Универсальный метод: найдено {len(rectangles)} прямоугольников")
-
-    # Если нашли слишком много, сортируем по площади и берем только самые большие
     if len(rectangles) > 30:
         rectangles.sort(key=lambda r: r['area'], reverse=True)
         rectangles = rectangles[:30]
@@ -247,72 +172,43 @@ def universal_detection_method(image_path):
     return rectangles
 
 def filter_small_by_structure(image, small_rectangles, large_rectangles, typical_width, typical_height):
-    """
-    Фильтрует маленькие картинки по структурному расположению
-    Ищет 12 картинок в ожидаемых позициях под большими картинками
-    """
     if len(large_rectangles) < 2:
         return small_rectangles
     
     height, width = image.shape[:2]
-    
-    # Сортируем большие картинки по Y
     large_rectangles.sort(key=lambda r: r['y'])
     large1 = large_rectangles[0]
     large2 = large_rectangles[1]
-    
-    # ОПРЕДЕЛЯЕМ ОБЛАСТИ ПОИСКА НА ОСНОВЕ СТРУКТУРЫ
-    # Область 1: между первой и второй большой картинкой
     region1_top = large1['y'] + large1['h'] + 20
     region1_bottom = large2['y'] - 20
-    
-    # Область 2: под второй большой картинкой
     region2_top = large2['y'] + large2['h'] + 20
     region2_bottom = height - 20
-    
-    # Допуск для размеров (20% от типичного размера)
     width_tolerance = int(typical_width * 0.2)
     height_tolerance = int(typical_height * 0.2)
     
     filtered_small = []
-    
-    # ФИЛЬТРАЦИЯ ДЛЯ ОБЛАСТИ 1
     region1_small = []
     for rect in small_rectangles:
-        # Проверяем, находится ли в области 1
         in_region1 = (region1_top <= rect['y'] <= region1_bottom)
-        
-        # Проверяем размер (с допуском)
         size_ok = (abs(rect['w'] - typical_width) <= width_tolerance and 
                    abs(rect['h'] - typical_height) <= height_tolerance)
         
         if in_region1 and size_ok:
             region1_small.append(rect)
-    
-    # Сортируем и берем до 6 картинок для области 1
     region1_small.sort(key=lambda r: (r['y'], r['x']))
     filtered_small.extend(region1_small[:6])
-    
-    # ФИЛЬТРАЦИЯ ДЛЯ ОБЛАСТИ 2
     region2_small = []
     for rect in small_rectangles:
-        # Проверяем, находится ли в области 2
         in_region2 = (region2_top <= rect['y'] <= region2_bottom)
-        
-        # Проверяем размер (с допуском)
         size_ok = (abs(rect['w'] - typical_width) <= width_tolerance and 
                    abs(rect['h'] - typical_height) <= height_tolerance)
         
         if in_region2 and size_ok:
             region2_small.append(rect)
-    
-    # Сортируем и берем до 6 картинок для области 2
     region2_small.sort(key=lambda r: (r['y'], r['x']))
     filtered_small.extend(region2_small[:6])
     
     print(f"Структурная фильтрация: {len(region1_small)} в области 1, {len(region2_small)} в области 2")
-    
-    # Если нашли меньше 12, добавляем дополнительные подходящие по размеру
     if len(filtered_small) < 12:
         additional = []
         for rect in small_rectangles:
@@ -321,42 +217,28 @@ def filter_small_by_structure(image, small_rectangles, large_rectangles, typical
                            abs(rect['h'] - typical_height) <= height_tolerance * 2)
                 if size_ok:
                     additional.append(rect)
-        
-        # Сортируем дополнительные по положению
         additional.sort(key=lambda r: (r['y'], r['x']))
         filtered_small.extend(additional[:12 - len(filtered_small)])
     
     return filtered_small[:12]  # Возвращаем максимум 12 картинок
 
 def crop_with_padding(image, rect, image_type="small"):
-    """
-    Обрезает картинку с небольшим отступом для исключения границ
-    """
     x, y, w, h = rect['x'], rect['y'], rect['w'], rect['h']
-    
-    # Разный padding для больших и маленьких картинок
     if image_type == "large":
         padding = max(5, int(min(w, h) * 0.01))  # 1% от меньшей стороны, но не менее 5px
     else:
         padding = max(3, int(min(w, h) * 0.02))  # 2% от меньшей стороны, но не менее 3px
-    
-    # Вычисляем новые координаты с отступом
     x_new = x + padding
     y_new = y + padding
     w_new = w - 2 * padding
     h_new = h - 2 * padding
-    
-    # Проверяем границы изображения
     if (x_new >= 0 and y_new >= 0 and 
         x_new + w_new <= image.shape[1] and 
         y_new + h_new <= image.shape[0] and
         w_new > 0 and h_new > 0):
-        
-        # Вырезаем область с отступом
         cropped = image[y_new:y_new+h_new, x_new:x_new+w_new]
         return cropped
     else:
-        # Если не получается с отступом, обрезаем без отступа
         if (x >= 0 and y >= 0 and 
             x + w <= image.shape[1] and 
             y + h <= image.shape[0]):
@@ -366,56 +248,32 @@ def crop_with_padding(image, rect, image_type="small"):
             return None
 
 def resize_to_fit(image, target_width, target_height):
-    """
-    Изменяет размер изображения до целевого с сохранением пропорций
-    Добавляет фон при необходимости
-    """
     if image is None:
-        return None
-        
+        return None        
     h, w = image.shape[:2]
-    
-    # Вычисляем коэффициенты масштабирования
     scale_x = target_width / w
     scale_y = target_height / h
-    
-    # Используем меньший коэффициент, чтобы сохранить пропорции
     scale = min(scale_x, scale_y)
-    
-    # Новые размеры с сохранением пропорций
     new_w = int(w * scale)
     new_h = int(h * scale)
-    
-    # Масштабируем изображение
     resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    
-    # Если нужно добавить фон (если изображение меньше целевого)
     if new_w < target_width or new_h < target_height:
         # Создаем изображение с белым фоном
         result = np.ones((target_height, target_width, 3), dtype=np.uint8) * 255
-        
-        # Вычисляем позицию для центрирования
         x_offset = (target_width - new_w) // 2
         y_offset = (target_height - new_h) // 2
-        
-        # Размещаем изображение по центру
         result[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
         return result
     else:
         return resized
 
 def display_results(original, debug_image, large_images, small_images_group1, small_images_group2):
-    """Визуализация результатов"""
 
     plt.figure(figsize=(20, 12))
-
-    # 1. Исходное изображение с разметкой
     plt.subplot(2, 2, 1)
     plt.imshow(cv2.cvtColor(debug_image, cv2.COLOR_BGR2RGB))
     plt.title('Результат обнаружения с разметкой', fontsize=12, fontweight='bold')
     plt.axis('off')
-
-    # 2. Папка 1 - содержимое
     plt.subplot(2, 2, 2)
     if large_images and len(large_images) >= 1:
         plt.imshow(cv2.cvtColor(large_images[0], cv2.COLOR_BGR2RGB))
@@ -424,8 +282,6 @@ def display_results(original, debug_image, large_images, small_images_group1, sm
         plt.text(0.5, 0.5, 'Не найдена', ha='center', va='center', transform=plt.gca().transAxes)
         plt.title('ПАПКА 1\n(не найдена)', fontsize=11)
     plt.axis('off')
-
-    # 3. Папка 2 - содержимое
     plt.subplot(2, 2, 3)
     if large_images and len(large_images) >= 2:
         plt.imshow(cv2.cvtColor(large_images[1], cv2.COLOR_BGR2RGB))
@@ -434,8 +290,6 @@ def display_results(original, debug_image, large_images, small_images_group1, sm
         plt.text(0.5, 0.5, 'Не найдена', ha='center', va='center', transform=plt.gca().transAxes)
         plt.title('ПАПКА 2\n(не найдена)', fontsize=11)
     plt.axis('off')
-
-    # 4. Сводная информация
     plt.subplot(2, 2, 4)
     info_text = f"РЕЗУЛЬТАТЫ:\n\n"
     info_text += f"ПАПКА 1:\n"
@@ -455,7 +309,6 @@ def display_results(original, debug_image, large_images, small_images_group1, sm
     plt.tight_layout()
     plt.show()
 
-# Основная программа
 if __name__ == "__main__":
     image_path = "/content/ПМР2.png"
 
@@ -478,14 +331,10 @@ if __name__ == "__main__":
             print(f"Результаты:")
             print(f"   Папка 1: 1 большая + {len(small_group1)} маленьких")
             print(f"   Папка 2: 1 большая + {len(small_group2)} маленьких")
-            
-            # Проверяем размеры сохраненных картинок
             if large_imgs:
                 print(f"   Размер больших картинок: {large_imgs[0].shape[1]}x{large_imgs[0].shape[0]}")
             if small_imgs:
                 print(f"   Размер маленьких картинок: {small_imgs[0].shape[1]}x{small_imgs[0].shape[0]}")
-
-            # Визуализация
             original_img = cv2.imread(image_path)
             display_results(original_img, debug_img, large_imgs, small_group1, small_group2)
 
